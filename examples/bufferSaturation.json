@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "1.0",
+  "id": "benchmark-buffer",
+  "name": "유한 버퍼 · 생산 정지",
+  "modelVersion": "0.1.0",
+  "description": "유한 버퍼 · 생산 정지 기준 검증 시나리오. 모든 수치는 검증용 가정입니다.",
+  "assumptions": [
+    "예시 수치는 기능 검증용 가정이며 실측 보정 결과가 아닙니다.",
+    "단위: 거리 m, 시간 s, 질량 kg, 에너지 Wh, 출력 W. 모든 층은 동일 평면입니다.",
+    "공정은 출력 공간을 먼저 예약한 뒤 부품을 소비합니다. 출력 공간 부족 시 생산 시작을 기다립니다.",
+    "운송은 출발 재고와 도착 공간을 예약합니다. 실제 재고는 상차·하차 완료 시에만 이동합니다.",
+    "이동은 정지-출발 구간별 가감속과 중간 노드 회전 여유시간을 포함합니다. 경로 통과 여부는 차체 폭 기준입니다.",
+    "교통은 경로 전체의 통로·교차로를 원자적으로 예약하는 보수적 방식입니다. 실제 차체 충돌·안전 성능 검증이 아닙니다.",
+    "지도 객체는 배치 표현입니다. 벽·기둥 회피는 사용자가 통행 노드와 연결을 구성해야 합니다.",
+    "충전은 일정 출력이며 충전 곡선·충전 손실·배터리 노화는 모델링하지 않습니다.",
+    "운송용기는 수량으로 집계하며 개별 팔레트 식별·반납 순환은 후속 범위입니다."
+  ],
+  "nodes": [
+    {
+      "id": "n-left",
+      "name": "왼쪽",
+      "x": 3,
+      "y": 6,
+      "kind": "pickup"
+    },
+    {
+      "id": "n-right",
+      "name": "오른쪽",
+      "x": 15,
+      "y": 6,
+      "kind": "dropoff"
+    },
+    {
+      "id": "n-charger",
+      "name": "충전기",
+      "x": 3,
+      "y": 14,
+      "kind": "charge"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-corridor",
+      "from": "n-left",
+      "to": "n-right",
+      "length": 12,
+      "width": 1.2,
+      "speedLimit": 1,
+      "bidirectional": true
+    },
+    {
+      "id": "e-charger",
+      "from": "n-left",
+      "to": "n-charger",
+      "length": 8,
+      "width": 1.2,
+      "speedLimit": 1,
+      "bidirectional": true
+    }
+  ],
+  "objects": [],
+  "buffers": [
+    {
+      "id": "b-left",
+      "name": "출발 버퍼",
+      "nodeId": "n-left",
+      "capacity": 2,
+      "initialInventory": {}
+    },
+    {
+      "id": "b-right",
+      "name": "도착 버퍼",
+      "nodeId": "n-right",
+      "capacity": 10,
+      "initialInventory": {
+        "A": 0
+      }
+    }
+  ],
+  "robotTypes": [
+    {
+      "id": "type-basic",
+      "name": "기준 AMR",
+      "width": 0.85,
+      "length": 1.15,
+      "maxPayloadKg": 300,
+      "maxUnits": 4,
+      "cargoTypes": [
+        "A",
+        "B",
+        "F"
+      ],
+      "emptySpeed": 1.4,
+      "loadedSpeed": 1,
+      "acceleration": 0.7,
+      "turnTime": 0,
+      "loadTime": 2,
+      "unloadTime": 2,
+      "batteryCapacityWh": 240,
+      "idlePowerW": 5,
+      "emptyPowerW": 100,
+      "loadedPowerW": 150,
+      "reserveWh": 10,
+      "chargeBelowWh": 30,
+      "chargeToWh": 200
+    }
+  ],
+  "robots": [
+    {
+      "id": "robot-1",
+      "name": "기준 로봇 1",
+      "typeId": "type-basic",
+      "nodeId": "n-left",
+      "initialBatteryWh": 200
+    }
+  ],
+  "chargers": [
+    {
+      "id": "charge-1",
+      "name": "기준 충전기",
+      "nodeId": "n-charger",
+      "capacity": 1,
+      "waitingCapacity": 2,
+      "powerW": 1200,
+      "compatibleTypes": [
+        "type-basic"
+      ],
+      "dockTime": 2,
+      "undockTime": 2
+    }
+  ],
+  "processes": [
+    {
+      "id": "p-source",
+      "name": "버퍼 포화 생산",
+      "nodeId": "n-left",
+      "inputRequirements": {},
+      "outputBufferId": "b-left",
+      "outputProduct": "A",
+      "outputQuantity": 1,
+      "processingTime": {
+        "kind": "fixed",
+        "value": 10
+      },
+      "isFinal": true
+    }
+  ],
+  "transportRules": [],
+  "equipment": [],
+  "disruptions": [],
+  "settings": {
+    "duration": 100,
+    "seed": 42,
+    "dispatchPolicy": "fifo",
+    "warmup": 0
+  }
+}

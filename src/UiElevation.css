@@ -1,0 +1,90 @@
+.elevation-card {
+  border: 1px solid #dbe5ee;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  margin-top: 20px;
+}
+.elevation-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px;
+  border-bottom: 1px solid #e7edf2;
+}
+.elevation-heading h3 {
+  margin: 6px 0;
+  font-size: 18px;
+  color: #20354a;
+}
+.elevation-heading p {
+  margin: 4px 0 0;
+  color: #75899d;
+  font-size: 12px;
+}
+.elevation-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.elevation-actions label {
+  font-size: 12px;
+  color: #60788e;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.elevation-actions select {
+  padding: 7px;
+  border: 1px solid #d4e0eb;
+  border-radius: 5px;
+}
+.elevation-facts {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  padding: 13px 22px;
+  font-size: 12px;
+  color: #73889c;
+}
+.elevation-facts b {
+  color: #344c62;
+  margin-left: 5px;
+}
+.elevation-svg-scroll {
+  max-height: 700px;
+  overflow: auto;
+  border-bottom: 1px solid #e8eef3;
+}
+.elevation-note {
+  padding: 4px 22px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #60788d;
+}
+.elevation-table {
+  max-height: 350px;
+  overflow: auto;
+}
+.elevation-table td,
+.elevation-table th {
+  padding: 10px 15px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.elevation-table th {
+  position: sticky;
+  top: 0;
+  background: #f2f6fa;
+  z-index: 1;
+}
+@media (max-width: 1000px) {
+  .elevation-heading {
+    flex-direction: column;
+  }
+  .elevation-facts {
+    gap: 12px;
+  }
+}

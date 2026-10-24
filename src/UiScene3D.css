@@ -1,0 +1,172 @@
+.scene3d-shell {
+  overflow: hidden;
+  border: 1px solid #e2e9ef;
+  border-radius: 10px;
+  background: #fff;
+}
+.scene3d-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 18px;
+  border-bottom: 1px solid #e5ebf0;
+  color: #526b7f;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+.scene3d-title > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scene3d-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #13a795;
+}
+.scene3d-stage {
+  position: relative;
+  height: 520px;
+  min-height: 420px;
+  overflow: hidden;
+  background: #edf3f6;
+}
+.scene3d-canvas {
+  position: absolute;
+  inset: 0;
+}
+.scene3d-canvas canvas {
+  outline: none;
+  touch-action: none;
+}
+.scene3d-height-card {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 15px;
+  border: 1px solid #dce7ec;
+  border-radius: 8px;
+  background: #ffffffed;
+  pointer-events: none;
+  box-shadow: 0 3px 15px #36506608;
+}
+.scene3d-height-card > span {
+  color: #71899b;
+  font-size: 10px;
+}
+.scene3d-height-card > strong {
+  color: #214656;
+  font-size: 25px;
+  font-weight: 650;
+}
+.scene3d-height-card > strong.scene3d-conflict {
+  color: #bd4f5c;
+}
+.scene3d-height-card > small {
+  color: #72889a;
+  font-size: 10px;
+}
+.scene3d-orbit-hint {
+  position: absolute;
+  right: 13px;
+  bottom: 12px;
+  color: #607c8e;
+  font-size: 10px;
+  pointer-events: none;
+  background: #ffffffd9;
+  border: 1px solid #e0e9ef;
+  border-radius: 5px;
+  padding: 6px 8px;
+}
+.scene3d-preview-tag {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  max-width: 46%;
+  padding: 7px 10px;
+  color: #9a7733;
+  background: #fff8e9ee;
+  border: 1px solid #ecddbb;
+  border-radius: 5px;
+  font-size: 10px;
+  pointer-events: none;
+}
+.scene3d-legend {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid #e5ebf0;
+  color: #7990a1;
+  font-size: 10px;
+}
+.scene3d-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.scene3d-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+.scene3d-legend .scene3d-axis {
+  margin-left: auto;
+  color: #9aabba;
+}
+.scene3d-note {
+  margin: 0;
+  padding: 0 16px 14px;
+  color: #879aab;
+  font-size: 10px;
+  line-height: 1.9;
+}
+.scene3d-fallback,
+.scene3d-loading {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  width: min(420px, 80%);
+  padding: 22px;
+  border-radius: 8px;
+  background: #ffffffed;
+  border: 1px solid #dbe5ec;
+  box-shadow: 0 5px 25px #29485c0a;
+  color: #61788b;
+  text-align: center;
+  line-height: 1.8;
+}
+.scene3d-fallback strong {
+  color: #3b586c;
+}
+.scene3d-fallback p {
+  font-size: 12px;
+}
+.scene3d-fallback small {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  color: #92a2b1;
+}
+@media (max-width: 900px) {
+  .scene3d-stage {
+    height: 450px;
+  }
+  .scene3d-preview-tag {
+    top: auto;
+    bottom: 45px;
+    max-width: 70%;
+  }
+  .scene3d-height-card {
+    left: 10px;
+    top: 10px;
+  }
+}

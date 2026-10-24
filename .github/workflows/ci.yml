@@ -1,0 +1,27 @@
+name: Validate simulator
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:api
+      - run: npm run build
+      - run: npm run simulate -- --benchmarks --output artifacts/benchmarks.json
+      - run: npm run test:e2e
