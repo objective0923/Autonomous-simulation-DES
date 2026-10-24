@@ -8,3 +8,4 @@
 - Preserve schema/version metadata, finite inventory reservations, and shared bidirectional physical corridor locks.
 - Record model assumptions and incomplete requirements in docs. Do not claim physical safety verification or real equipment integration.
 - Keep generated results in ignored `artifacts/`; do not commit caches, browser binaries, node_modules, or credentials.
+- Customer/scenario data lives in ignored `data/`. Never delete it during setup or tests. Tests must use a temporary `CROIS_DATA_DIR`.

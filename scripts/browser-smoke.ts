@@ -4,6 +4,10 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { browserHarness } from "./browser-harness";
 import { parseSavedRun } from "../src/replay";
+import {
+  createScenarioThroughUi,
+  openScenarioThroughUi,
+} from "./browser-scenarios";
 
 const artifacts = path.resolve("artifacts/browser");
 await mkdir(artifacts, { recursive: true });
@@ -20,6 +24,12 @@ try {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(url, { waitUntil: "networkidle" });
+  const scenario = await createScenarioThroughUi(
+    page,
+    "웹 검증 고객",
+    "기본 시나리오",
+  );
+  await page.getByRole("button", { name: /공간 · 모델 편집/ }).click();
   await page
     .getByRole("heading", { name: "공간과 운영을 설계하세요" })
     .waitFor();
@@ -38,13 +48,15 @@ try {
   await page.getByRole("button", { name: "실행 취소", exact: true }).click();
   await page.getByRole("button", { name: "조건", exact: true }).click();
   await page
-    .getByLabel("프로젝트 이름", { exact: true })
+    .getByLabel("시나리오 이름", { exact: true })
     .fill("브라우저 검증 라인");
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await page.reload({ waitUntil: "networkidle" });
+  await openScenarioThroughUi(page, scenario.id);
+  await page.getByRole("button", { name: /공간 · 모델 편집/ }).click();
   await page.getByRole("button", { name: "조건", exact: true }).click();
   assert.equal(
-    await page.getByLabel("프로젝트 이름", { exact: true }).inputValue(),
+    await page.getByLabel("시나리오 이름", { exact: true }).inputValue(),
     "브라우저 검증 라인",
   );
   await page.screenshot({
@@ -54,7 +66,9 @@ try {
   await page
     .getByRole("button", { name: "이벤트 단위 진행", exact: true })
     .click();
-  await page.getByRole("heading", { name: "실시간 자원 상태", exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "실시간 자원 상태", exact: true })
+    .waitFor();
   await page.getByRole("button", { name: /공간 · 모델 편집/ }).click();
   await page.getByRole("button", { name: "조건", exact: true }).click();
   assert(

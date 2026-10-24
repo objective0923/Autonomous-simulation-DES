@@ -4,6 +4,20 @@ import { cloneProject, parseProject, validateProject } from "../src/model";
 import type { Project } from "../src/types";
 
 describe("project schema and operational validation", () => {
+  it("roundtrips optional customer metadata without changing legacy projects", () => {
+    const legacy = createExampleProject();
+    expect(parseProject(legacy).customerName).toBeUndefined();
+    const named = { ...legacy, customerName: "테스트 고객" };
+    expect(parseProject(JSON.parse(JSON.stringify(named))).customerName).toBe(
+      "테스트 고객",
+    );
+    expect(
+      validateProject({ ...legacy, customerName: [] }).map((i) => i.code),
+    ).toContain("CUSTOMER_NAME");
+    expect(
+      validateProject({ ...legacy, customerName: " " }).map((i) => i.code),
+    ).toContain("CUSTOMER_NAME");
+  });
   it("validates every delivered project without errors or warnings", () => {
     for (const project of [
       createExampleProject(),

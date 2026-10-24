@@ -4,6 +4,12 @@ import path from "node:path";
 import { browserHarness } from "./browser-harness";
 import { parseProject } from "../src/model";
 import { compareRackLevels, resolveVerticalGeometry } from "../src/planning";
+import {
+  createScenarioThroughUi,
+  openScenarioThroughUi,
+  wizardStep,
+  expandDetails,
+} from "./browser-scenarios";
 
 const artifacts = path.resolve("artifacts/browser");
 await mkdir(artifacts, { recursive: true });
@@ -24,14 +30,16 @@ try {
     printBackground: true,
   });
   await page.goto(url, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /공간 · 랙 사전 설계/ }).click();
-  await page
-    .getByLabel("원본 PNG JPG PDF 업로드")
-    .setInputFiles({
-      name: "customer-warehouse.pdf",
-      mimeType: "application/pdf",
-      buffer: pdf,
-    });
+  const scenario = await createScenarioThroughUi(
+    page,
+    "도면 검증 고객",
+    "20단 배치 검토",
+  );
+  await page.getByLabel("원본 PNG JPG PDF 업로드").setInputFiles({
+    name: "customer-warehouse.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf,
+  });
   await page
     .locator(".source-file")
     .getByText("customer-warehouse.pdf", { exact: true })
@@ -78,7 +86,7 @@ try {
   assert.match(await page.locator(".source-status").innerText(), /확인됨/);
   await page.getByRole("button", { name: "저장", exact: true }).click();
   await page.reload({ waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /공간 · 랙 사전 설계/ }).click();
+  await openScenarioThroughUi(page, scenario.id);
   assert(
     await page.getByLabel("축척과 기준거리 확인", { exact: true }).isChecked(),
   );
@@ -92,38 +100,46 @@ try {
     fullPage: true,
   });
 
-  const pipeline = page.getByRole("navigation", { name: "사전 설계 단계" });
-  await pipeline.getByRole("button", { name: /공간 · 장비 사양/ }).click();
+  await wizardStep(page, "공간");
+  await page.getByLabel(/유효 천장 높이/).fill("3");
+  await wizardStep(page, "로봇");
   assert.equal(
     await page.getByLabel(/로봇 외형 폭/).inputValue(),
     "",
     "실제 미제공 로봇 치수를 임의로 채우면 안 됩니다.",
   );
   await page
+    .locator("summary")
+    .filter({ hasText: "고급 설정 · 내부 선반과 하중" })
+    .click();
+  await page
     .getByRole("button", { name: "DEMO 로봇 가정값 입력", exact: true })
     .click();
-  await page.getByLabel(/유효 천장 높이/).fill("3");
   await page.getByLabel(/최저 인계 가능 높이/).fill("0.1");
   await page.getByLabel(/^최고 인계 가능 높이/).fill("2.6");
   await page.getByLabel(/마스트 최대 상승 전고/).fill("3");
   await page.getByLabel(/장비 첫 선반 높이/).fill("0.15");
   await page.getByLabel(/장비 선반 피치/).fill("0.42483333333333334");
   await page.getByLabel(/장비 내부 선반 수/).fill("6");
+  await wizardStep(page, "랙");
+  await expandDetails(page, "고급 설정 · 랙 크기·여유·하중");
   await page
     .getByLabel(/첫 선반 높이/)
     .last()
     .fill("0.15");
   await page.getByLabel(/운송물 높이/).fill("0.3");
   await page.getByLabel(/인계 상승 여유/).fill("0.07");
+  await expandDetails(page, "예제 · 파일 불러오기");
   await page
     .getByRole("button", { name: "첨부 2,699 mm 예제 적용", exact: true })
     .click();
   assert.match(await page.locator(".elevation-facts").innerText(), /2,699/);
-  await pipeline.getByRole("button", { name: /공간 · 장비 사양/ }).click();
+  await wizardStep(page, "랙");
   await page.getByLabel(/랙 높이 산정 방식/).selectOption("pitch");
   await page.getByLabel(/^선반 간 피치/).fill("0.42483333333333334");
   // Field labels are kept explicit to verify the supplied vertical model in the UI.
-  await pipeline.getByRole("button", { name: /단수 · 인계 높이 비교/ }).click();
+  await wizardStep(page, "높이 검토");
+  await expandDetails(page, "다른 단수와 비교");
   await page.getByLabel(/대안 B 단수/).fill("20");
   await page.getByLabel(/측면도 기준 단수/).fill("20");
   await page.getByTestId("rack-elevation").waitFor();
@@ -147,7 +163,8 @@ try {
     fullPage: true,
   });
 
-  await pipeline.getByRole("button", { name: /자동 배치 · 3D/ }).click();
+  await wizardStep(page, "배치");
+  await expandDetails(page, "배치 여유 조정");
   await page.getByLabel(/횡단 통로 폭/).fill("3");
   await page
     .getByRole("button", { name: "배치 후보 생성", exact: true })
@@ -172,11 +189,12 @@ try {
       .isDisabled(),
     "높이 한계를 넘는 후보는 적용하면 안 됩니다.",
   );
-  await pipeline.getByRole("button", { name: /공간 · 장비 사양/ }).click();
+  await wizardStep(page, "공간");
   await page.getByLabel(/유효 천장 높이/).fill("10");
+  await wizardStep(page, "로봇");
   await page.getByLabel(/^최고 인계 가능 높이/).fill("9");
   await page.getByLabel(/마스트 최대 상승 전고/).fill("9.5");
-  await pipeline.getByRole("button", { name: /자동 배치 · 3D/ }).click();
+  await wizardStep(page, "배치");
   await page
     .getByRole("button", { name: "배치 후보 생성", exact: true })
     .click();
@@ -193,7 +211,9 @@ try {
     .getByRole("button", { name: "후보를 2D 객체로 적용", exact: true })
     .click();
   const projectDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "내보내기", exact: true }).click();
+  await page
+    .getByRole("button", { name: "파일 내보내기", exact: true })
+    .click();
   const file = await projectDownload;
   const projectPath = path.join(artifacts, "spatial-project.json");
   await file.saveAs(projectPath);

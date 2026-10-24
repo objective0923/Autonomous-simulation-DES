@@ -20,8 +20,9 @@ interface Props {
   project: Project;
   onChange: (project: Project) => void;
   disabled?: boolean;
+  onComplete?: () => void;
 }
-type PlanStep = 0 | 1 | 2 | 3;
+type PlanStep = 0 | 1 | 2 | 3 | 4 | 5;
 type Proposal = ReturnType<typeof generateLayout>;
 const fmt = (value: number | null | undefined, digits = 2) =>
   value == null || !Number.isFinite(value)
@@ -131,6 +132,7 @@ export default function UiPlanning({
   project,
   onChange,
   disabled = false,
+  onComplete,
 }: Props) {
   const [step, setStep] = useState<PlanStep>(0);
   const [candidateA, setCandidateA] = useState(5);
@@ -302,7 +304,7 @@ export default function UiPlanning({
     });
     setCandidateA(5);
     setCandidateB(input.rack.levels === 5 ? 6 : input.rack.levels);
-    setStep(2);
+    setStep(4);
     setMessage(
       `${label}을 입력했습니다. 실제 도면·로봇 외형·통로·하중 사양은 별도로 확인하세요. 확인 상태는 모두 해제됩니다.`,
     );
@@ -345,794 +347,561 @@ export default function UiPlanning({
       };
     });
 
+  const steps = [
+    {
+      label: "도면",
+      title: "도면을 준비해 주세요",
+      help: "고객 도면을 넣거나, 도면 없이 기본 예제로 시작할 수 있습니다.",
+    },
+    {
+      label: "공간",
+      title: "공간 크기를 알려주세요",
+      help: "사용할 공간의 가로·세로·높이만 먼저 입력하세요. 모르는 값은 나중에 입력해도 됩니다.",
+    },
+    {
+      label: "로봇",
+      title: "사용할 로봇을 알려주세요",
+      help: "정해진 로봇 사양만 입력하세요. 실제 사양이 없으면 비워 두고 진행할 수 있습니다.",
+    },
+    {
+      label: "랙",
+      title: "랙과 운송물을 입력해 주세요",
+      help: "단수와 운송물 높이를 입력하고, 선반 간격 또는 랙 전체 높이를 선택하세요.",
+    },
+    {
+      label: "높이 검토",
+      title: "높이가 맞는지 확인해 보세요",
+      help: "선택한 단수의 랙·로봇 높이를 같은 바닥 기준으로 비교합니다.",
+    },
+    {
+      label: "배치",
+      title: "배치를 확인하고 실행하세요",
+      help: "로봇 외형과 통로 폭이 준비되면 배치 후보를 만들 수 있습니다. 배치는 나중에 해도 됩니다.",
+    },
+  ];
+  const field = (
+    section: "building" | "robot" | "rack",
+    key: string,
+    label: string,
+    options: {
+      nullable?: boolean;
+      unit?: string;
+      step?: number;
+      detail?: string;
+      disabled?: boolean;
+    } = {},
+  ) => (
+    <NumberField
+      label={label}
+      value={(plan[section] as unknown as Record<string, number | null>)[key]}
+      onChange={(value) =>
+        updateNumber(section, key, options.nullable ? value : (value ?? 0))
+      }
+      {...options}
+      disabled={disabled || options.disabled}
+    />
+  );
+  const confirmation = (
+    section: "building" | "robot" | "rack",
+    title: string,
+    complete: boolean,
+  ) => (
+    <details className="plan-extra plan-confirmation">
+      <summary>
+        치수 확인 · {title}
+        <span>{plan[section].confirmed ? "확인됨" : "나중에 확인 가능"}</span>
+      </summary>
+      <Evidence
+        title={title}
+        confirmed={plan[section].confirmed}
+        evidence={plan[section].evidence}
+        complete={complete}
+        disabled={disabled}
+        onEvidence={(value) =>
+          updatePlan((next) => {
+            next[section].evidence = value;
+            next[section].confirmed = false;
+          })
+        }
+        onConfirm={(value) =>
+          updatePlan((next) => {
+            next[section].confirmed = value;
+          })
+        }
+      />
+    </details>
+  );
+  const levelsField = (label: string) => (
+    <NumberField
+      label={label}
+      unit="단"
+      value={plan.layout.requestedLevels}
+      step={1}
+      disabled={disabled}
+      onChange={(value) =>
+        updatePlan((next) => {
+          next.layout.requestedLevels = Math.max(
+            1,
+            Math.min(100, Math.floor(value ?? 1)),
+          );
+        })
+      }
+    />
+  );
+  const checkList = (comparison: NonNullable<typeof activeComparison>) => (
+    <ul className="plan-check-list">
+      {comparison.checks.map((check) => (
+        <li key={check.code} className={check.status}>
+          <i>
+            {check.status === "pass"
+              ? "✓"
+              : check.status === "fail"
+                ? "×"
+                : "!"}
+          </i>
+          <div>
+            <strong>{check.label}</strong>
+            <p>{check.message}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
-    <section className="planning-workspace" aria-label="공간 및 랙 사전 설계">
-      <div className="plan-context">
-        <div>
-          <span className="plan-dot" />
-          <strong>도면에서 배치 후보까지</strong>
-          <p>
-            원본 도면과 실제 사양을 연결해 5단·6단부터 20단 이상을 비교하고,
-            후보를 3D로 살펴보세요.
-          </p>
-        </div>
-        <span className={`plan-status ${hasEvidence ? "pass" : "needsReview"}`}>
-          {hasEvidence ? "입력 근거 사용자 확인" : "미확인 입력 포함"}
-        </span>
-      </div>
-      <nav className="plan-pipeline" aria-label="사전 설계 단계">
-        {[
-          { label: "도면 · 축척", sub: "Source & calibration" },
-          { label: "공간 · 장비 사양", sub: "Verified dimensions" },
-          { label: "단수 · 인계 높이 비교", sub: "Rack & robot elevation" },
-          { label: "자동 배치 · 3D", sub: "Candidate layout" },
-        ].map((item, index) => (
+    <section
+      className="planning-workspace"
+      aria-label="공간 및 랙 사전 설계"
+      data-testid="scenario-wizard"
+      data-step={step}
+    >
+      <nav className="plan-pipeline" aria-label="시나리오 입력 단계">
+        {steps.map((item, index) => (
           <button
             key={item.label}
-            className={step === index ? "active" : ""}
-            onClick={() => setStep(index as PlanStep)}
+            aria-label={`단계 ${index + 1}: ${item.label}`}
             aria-current={step === index ? "step" : undefined}
+            className={
+              step === index ? "active" : step > index ? "visited" : ""
+            }
+            onClick={() => setStep(index as PlanStep)}
           >
-            <b>{String(index + 1).padStart(2, "0")}</b>
-            <span>
-              {item.label}
-              <small>{item.sub}</small>
-            </span>
-            <i>›</i>
+            <b>{index + 1}</b>
+            <span>{item.label}</span>
           </button>
         ))}
       </nav>
-      <div className="plan-integration-bar">
+      <div className="plan-wizard-heading">
         <div>
-          <strong>첨부 수직 모델 연결</strong>
-          <p>
-            mm 단위 원본 입력을 m 단위 계획으로 변환합니다. 제공된 예제는 확인된
-            현장 사양을 대신하지 않습니다.
-          </p>
+          <span className="plan-step-caption">
+            STEP {step + 1} / {steps.length}
+          </span>
+          <h2>{steps[step].title}</h2>
+          <p>{steps[step].help}</p>
         </div>
-        <button
-          className="button small"
-          disabled={disabled}
-          onClick={() =>
-            applyVertical(
-              structuredClone(EXAMPLE_INPUT),
-              "첨부 예제 가정 · 실사양 아님",
-            )
-          }
-        >
-          첨부 2,699 mm 예제 적용
-        </button>
-        <button
-          className="button small"
-          disabled={disabled}
-          onClick={() => verticalFileRef.current?.click()}
-        >
-          버티컬 사양 JSON 불러오기
-        </button>
-        <input
-          hidden
-          type="file"
-          accept="application/json,.json"
-          aria-label="버티컬 사양 JSON 파일"
-          ref={verticalFileRef}
-          onChange={importVertical}
-        />
+        <span className="plan-draft-badge">
+          {hasEvidence ? "입력 근거 확인됨" : "작성 중 · 미확인 값 포함"}
+        </span>
       </div>
       {disabled && (
         <p className="plan-notice">
-          시뮬레이션 입력이 잠겨 있습니다. 초기화한 뒤 도면과 설계 조건을
-          편집하세요.
+          실행 기록을 보는 동안에는 입력이 잠깁니다. 초기화 후 수정할 수
+          있습니다.
         </p>
       )}
+
       {step === 0 && (
-        <>
+        <div className="plan-step-body">
           <UiSource
             project={project}
             onChange={sourceChange}
             disabled={disabled}
           />
-          <div className="plan-step-footer">
-            <p>
-              도면은 시각적 기준입니다. 길이 기준과 현장 치수를 확인한 뒤
-              공간·장비 사양을 입력하세요.
-            </p>
-            <button className="button primary" onClick={() => setStep(1)}>
-              공간 · 장비 사양 입력 <span>→</span>
-            </button>
-          </div>
-        </>
+          <p className="plan-subtle">
+            도면이 없어도 예제 운영 조건으로 시뮬레이션을 시작할 수 있습니다.
+            실제 배치 검토 전에는 도면과 치수를 확인하세요.
+          </p>
+        </div>
       )}
+
       {step === 1 && (
-        <>
-          <div className="plan-input-grid">
-            <section className="plan-card">
-              <header>
-                <span className="plan-card-number">A</span>
-                <div>
-                  <h2>건축 · 작업 공간</h2>
-                  <p>벽체 안쪽의 유효 치수 기준</p>
-                </div>
-                <span
-                  className={`plan-status ${plan.building.confirmed ? "pass" : "needsReview"}`}
-                >
-                  {plan.building.confirmed ? "사용자 확인" : "미확인"}
-                </span>
-              </header>
-              <div className="plan-card-body">
-                <div className="plan-two-fields">
-                  <NumberField
-                    label="건물 유효 가로"
-                    value={plan.building.width}
-                    onChange={(v) => updateNumber("building", "width", v ?? 0)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="건물 유효 세로"
-                    value={plan.building.depth}
-                    onChange={(v) => updateNumber("building", "depth", v ?? 0)}
-                    disabled={disabled}
-                  />
-                </div>
-                <NumberField
-                  label="유효 천장 높이"
-                  value={plan.building.clearHeight}
-                  nullable
-                  onChange={(v) => updateNumber("building", "clearHeight", v)}
+        <section
+          className="plan-card plan-focused-card"
+          aria-label="공간 기본 입력"
+        >
+          <div className="plan-card-body">
+            <div className="plan-form-section">
+              <h3>사용할 공간</h3>
+              <p>길이는 m로 입력합니다. 10,000 mm는 10 m입니다.</p>
+            </div>
+            <div className="plan-three-fields">
+              {field("building", "width", "건물 유효 가로")}
+              {field("building", "depth", "건물 유효 세로")}
+              {field("building", "clearHeight", "유효 천장 높이", {
+                nullable: true,
+                detail: "보·배관 등 가장 낮은 장애물 아래 높이",
+              })}
+            </div>
+            <p className="plan-assumption">
+              초기 평면 {fmt(createSpacePlan().building.width)} ×{" "}
+              {fmt(createSpacePlan().building.depth)} m는 예제 가정입니다. 실제
+              도면의 치수로 바꿔 주세요.
+            </p>
+            {confirmation("building", "공간 치수", canConfirmBuilding)}
+          </div>
+        </section>
+      )}
+
+      {step === 2 && (
+        <section
+          className="plan-card plan-focused-card"
+          aria-label="로봇 기본 입력"
+        >
+          <div className="plan-card-body">
+            <label className="plan-field">
+              <span>장비 방식</span>
+              <select
+                aria-label="장비 방식"
+                value={plan.robot.kind}
+                disabled={disabled}
+                onChange={(event) =>
+                  updatePlan((next) => {
+                    next.robot.kind = event.target
+                      .value as SpacePlan["robot"]["kind"];
+                    next.robot.confirmed = false;
+                  })
+                }
+              >
+                <option value="ctu">CTU · 선반 인계형</option>
+                <option value="lowProfile">저상형 AMR</option>
+                <option value="pallet">팔레트 AMR</option>
+              </select>
+            </label>
+            <div className="plan-form-section">
+              <h3>바닥면과 통로</h3>
+              <p>아직 정해지지 않은 로봇 사양은 비워 두세요.</p>
+            </div>
+            <div className="plan-three-fields">
+              {field("robot", "width", "로봇 외형 폭", { nullable: true })}
+              {field("robot", "length", "로봇 외형 길이", { nullable: true })}
+              {field("robot", "minAisleWidth", "최소 작업 통로 폭", {
+                nullable: true,
+              })}
+            </div>
+            <div className="plan-form-section">
+              <h3>인계 가능한 높이</h3>
+              <p>
+                {plan.robot.kind === "ctu"
+                  ? "제품을 넣고 뺄 수 있는 높이와 로봇 전체 높이를 구분합니다."
+                  : "고단 랙 인계는 별도 승강·인계 설비가 필요할 수 있습니다."}
+              </p>
+            </div>
+            <div className="plan-three-fields">
+              {field("robot", "minTransferHeight", "최저 인계 가능 높이", {
+                nullable: true,
+              })}
+              {field("robot", "maxLiftHeight", "최고 인계 가능 높이", {
+                nullable: true,
+              })}
+              {field("robot", "overallHeight", "마스트 최대 상승 전고", {
+                nullable: true,
+              })}
+            </div>
+            <details className="plan-extra">
+              <summary>고급 설정 · 내부 선반과 하중</summary>
+              <p className="plan-subtle">
+                내부 선반 피치와 랙 피치는 서로 다른 사양입니다. 연속 승강형은
+                피치가 달라도 작업 범위로 판단합니다.
+              </p>
+              <label className="plan-field">
+                <span>인계 방식</span>
+                <select
+                  aria-label="인계 방식"
+                  value={plan.robot.transferMode}
                   disabled={disabled}
-                  detail="보·배관·스프링클러 등 최저 간섭물 아래의 실제 높이"
-                />
-                <div className="plan-form-info">
-                  기본 평면 {fmt(plan.building.width)} ×{" "}
-                  {fmt(plan.building.depth)} m는 초기 입력값입니다. 도면 축척과
-                  실측 근거를 확인하세요.
-                </div>
-                <Evidence
-                  title="공간 치수"
-                  confirmed={plan.building.confirmed}
-                  evidence={plan.building.evidence}
-                  onEvidence={(value) =>
+                  onChange={(event) =>
                     updatePlan((next) => {
-                      next.building.evidence = value;
-                      next.building.confirmed = false;
-                    })
-                  }
-                  onConfirm={(value) =>
-                    updatePlan((next) => {
-                      next.building.confirmed = value;
-                    })
-                  }
-                  complete={canConfirmBuilding}
-                  disabled={disabled}
-                />
-              </div>
-            </section>
-            <section className="plan-card">
-              <header>
-                <span className="plan-card-number">B</span>
-                <div>
-                  <h2>로봇 · CTU 사양</h2>
-                  <p>실제 모델 사양서 입력</p>
-                </div>
-                <span
-                  className={`plan-status ${plan.robot.confirmed ? "pass" : "needsReview"}`}
-                >
-                  {plan.robot.confirmed ? "사용자 확인" : "미확인"}
-                </span>
-              </header>
-              <div className="plan-card-body">
-                <label className="plan-field">
-                  <span>장비 방식</span>
-                  <select
-                    value={plan.robot.kind}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      updatePlan((next) => {
-                        next.robot.kind = event.target
-                          .value as SpacePlan["robot"]["kind"];
-                        next.robot.confirmed = false;
-                      })
-                    }
-                  >
-                    <option value="ctu">CTU · 선반 인계형</option>
-                    <option value="lowProfile">저상형 AMR</option>
-                    <option value="pallet">팔레트 AMR</option>
-                  </select>
-                </label>
-                <div className="plan-two-fields">
-                  <NumberField
-                    label="로봇 외형 폭"
-                    value={plan.robot.width}
-                    nullable
-                    onChange={(v) => updateNumber("robot", "width", v)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="로봇 외형 길이"
-                    value={plan.robot.length}
-                    nullable
-                    onChange={(v) => updateNumber("robot", "length", v)}
-                    disabled={disabled}
-                  />
-                </div>
-                <NumberField
-                  label="최소 작업 통로 폭"
-                  value={plan.robot.minAisleWidth}
-                  nullable
-                  onChange={(v) => updateNumber("robot", "minAisleWidth", v)}
-                  disabled={disabled}
-                  detail="제조사 기준 회전·인계·적재물 외형을 포함한 요구 폭"
-                />
-                <label className="plan-field">
-                  <span>인계 방식</span>
-                  <select
-                    value={plan.robot.transferMode}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      updatePlan((next) => {
-                        next.robot.transferMode = event.target
-                          .value as SpacePlan["robot"]["transferMode"];
-                        next.robot.confirmed = false;
-                      })
-                    }
-                  >
-                    <option value="liftRange">연속 승강 범위에서 인계</option>
-                    <option value="fixedLevels">
-                      고정된 선반 높이에서 인계
-                    </option>
-                  </select>
-                </label>
-                <p className="plan-demo-note">
-                  연속 승강형은 접근 가능한 최소·최고 높이를 검사합니다. 내부
-                  선반 수와 랙 단수가 같을 필요는 없습니다. 고정 인계형은 랙의
-                  각 선반과 장비 인계 단의 높이를 허용 오차 내에서 대조합니다.
-                </p>
-                <NumberField
-                  label="최저 인계 가능 높이"
-                  value={plan.robot.minTransferHeight}
-                  nullable
-                  onChange={(v) =>
-                    updateNumber("robot", "minTransferHeight", v)
-                  }
-                  disabled={disabled}
-                />
-                <div className="plan-two-fields">
-                  <NumberField
-                    label="최고 인계 가능 높이"
-                    value={plan.robot.maxLiftHeight}
-                    nullable
-                    onChange={(v) => updateNumber("robot", "maxLiftHeight", v)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="최대 적재 중량"
-                    unit="kg"
-                    value={plan.robot.maxPayloadKg}
-                    nullable
-                    step={10}
-                    onChange={(v) => updateNumber("robot", "maxPayloadKg", v)}
-                    disabled={disabled}
-                  />
-                </div>
-                <NumberField
-                  label="마스트 최대 상승 전고"
-                  value={plan.robot.overallHeight}
-                  nullable
-                  onChange={(v) => updateNumber("robot", "overallHeight", v)}
-                  disabled={disabled}
-                  detail="장비 자체의 최고 높이입니다. 최고 인계 가능 높이와 별도로 천장 간섭을 검사합니다."
-                />
-                <div className="plan-robot-shelves">
-                  <h3>로봇 내부 선반 · 고정 인계 단</h3>
-                  <div className="plan-two-fields">
-                    <NumberField
-                      label="장비 첫 선반 높이"
-                      value={plan.robot.firstShelfHeight}
-                      nullable
-                      onChange={(v) =>
-                        updateNumber("robot", "firstShelfHeight", v)
-                      }
-                      disabled={disabled}
-                    />
-                    <NumberField
-                      label="장비 선반 피치"
-                      value={plan.robot.shelfPitch}
-                      nullable
-                      onChange={(v) => updateNumber("robot", "shelfPitch", v)}
-                      disabled={disabled}
-                    />
-                    <NumberField
-                      label="장비 내부 선반 수"
-                      unit="단"
-                      value={plan.robot.shelfCount}
-                      nullable
-                      step={1}
-                      onChange={(v) => updateNumber("robot", "shelfCount", v)}
-                      disabled={disabled}
-                    />
-                    <NumberField
-                      label="고정 인계 높이 오차"
-                      value={plan.robot.alignmentTolerance}
-                      step={0.001}
-                      onChange={(v) =>
-                        updateNumber("robot", "alignmentTolerance", v ?? 0)
-                      }
-                      disabled={disabled}
-                    />
-                  </div>
-                  <p className="plan-demo-note">
-                    장비 첫 선반 높이는 최저 인계 가능 높이와 다른 사양입니다.
-                    내부 선반 높이를 임의로 승강 범위와 동일하게 가정하지
-                    않습니다.
-                  </p>
-                </div>
-                <button
-                  className="button small"
-                  disabled={disabled}
-                  onClick={demoRobot}
-                >
-                  DEMO 로봇 가정값 입력
-                </button>
-                <p className="plan-demo-note">
-                  실제 장비가 정해지지 않았다면 가정으로 비교할 수 있습니다.
-                  DEMO 수치는 확인 상태로 저장되지 않습니다.
-                </p>
-                <Evidence
-                  title="로봇 사양"
-                  confirmed={plan.robot.confirmed}
-                  evidence={plan.robot.evidence}
-                  onEvidence={(value) =>
-                    updatePlan((next) => {
-                      next.robot.evidence = value;
+                      next.robot.transferMode = event.target
+                        .value as SpacePlan["robot"]["transferMode"];
                       next.robot.confirmed = false;
                     })
                   }
-                  onConfirm={(value) =>
-                    updatePlan((next) => {
-                      next.robot.confirmed = value;
-                    })
-                  }
-                  complete={canConfirmRobot}
-                  disabled={disabled}
-                />
-              </div>
-            </section>
-            <section className="plan-card">
-              <header>
-                <span className="plan-card-number">C</span>
-                <div>
-                  <h2>랙 · 운송물 조건</h2>
-                  <p>임의 단수 비교의 공통 조건</p>
-                </div>
-                <span
-                  className={`plan-status ${plan.rack.confirmed ? "pass" : "needsReview"}`}
                 >
-                  {plan.rack.confirmed ? "사용자 확인" : "미확인"}
-                </span>
-              </header>
-              <div className="plan-card-body">
-                <label className="plan-field">
-                  <span>랙 높이 산정 방식</span>
-                  <select
-                    value={plan.rack.heightMode}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      updatePlan((next) => {
-                        next.rack.heightMode = event.target
-                          .value as SpacePlan["rack"]["heightMode"];
-                        next.rack.confirmed = false;
-                      })
-                    }
-                  >
-                    <option value="pitch">선반 피치 지정</option>
-                    <option value="totalHeight">
-                      구조 총높이 지정 · 피치 역산
-                    </option>
-                    <option value="minimum">
-                      운송물·빔·인출 여유로 최소 피치 산정
-                    </option>
-                  </select>
-                </label>
-                {plan.rack.heightMode === "totalHeight" && (
-                  <NumberField
-                    label="랙 구조 총높이"
-                    value={plan.rack.totalHeight}
-                    nullable
-                    onChange={(v) => updateNumber("rack", "totalHeight", v)}
-                    disabled={disabled}
-                    detail="첫 선반부터 마지막 단 위 상단 빔까지 포함한 구조 높이"
-                  />
-                )}
-                <div className="plan-two-fields">
-                  <NumberField
-                    label="랙 모듈 가로"
-                    value={plan.rack.width}
-                    onChange={(v) => updateNumber("rack", "width", v ?? 0)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="랙 모듈 깊이"
-                    value={plan.rack.depth}
-                    onChange={(v) => updateNumber("rack", "depth", v ?? 0)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="첫 선반 높이"
-                    value={plan.rack.firstShelfHeight}
-                    onChange={(v) =>
-                      updateNumber("rack", "firstShelfHeight", v ?? 0)
-                    }
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label={
-                      plan.rack.heightMode === "pitch"
-                        ? "선반 간 피치"
-                        : "지정 피치 (현재 모드 미사용)"
-                    }
-                    value={plan.rack.shelfPitch}
-                    onChange={(v) => updateNumber("rack", "shelfPitch", v ?? 0)}
-                    disabled={disabled || plan.rack.heightMode !== "pitch"}
-                  />
-                  <NumberField
-                    label="운송물 높이"
-                    value={plan.rack.loadHeight}
-                    onChange={(v) => updateNumber("rack", "loadHeight", v ?? 0)}
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="상부 여유 높이"
-                    value={plan.rack.topClearance}
-                    onChange={(v) =>
-                      updateNumber("rack", "topClearance", v ?? 0)
-                    }
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="인계 상승 여유"
-                    value={plan.rack.liftClearance}
-                    onChange={(v) =>
-                      updateNumber("rack", "liftClearance", v ?? 0)
-                    }
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="선반 빔 두께"
-                    value={plan.rack.beamThickness}
-                    step={0.01}
-                    onChange={(v) =>
-                      updateNumber("rack", "beamThickness", v ?? 0)
-                    }
-                    disabled={disabled}
-                  />
-                  <NumberField
-                    label="운송물 중량"
-                    unit="kg"
-                    value={plan.rack.unitLoadKg}
-                    step={10}
-                    onChange={(v) => updateNumber("rack", "unitLoadKg", v ?? 0)}
-                    disabled={disabled}
-                  />
-                </div>
-                <NumberField
-                  label="선반당 허용 중량"
-                  unit="kg"
-                  value={plan.rack.shelfCapacityKg}
-                  step={10}
-                  onChange={(v) =>
-                    updateNumber("rack", "shelfCapacityKg", v ?? 0)
-                  }
-                  disabled={disabled}
-                />
-                <Evidence
-                  title="랙 · 운송물 조건"
-                  confirmed={plan.rack.confirmed}
-                  evidence={plan.rack.evidence}
-                  onEvidence={(value) =>
-                    updatePlan((next) => {
-                      next.rack.evidence = value;
-                      next.rack.confirmed = false;
-                    })
-                  }
-                  onConfirm={(value) =>
-                    updatePlan((next) => {
-                      next.rack.confirmed = value;
-                    })
-                  }
-                  complete={canConfirmRack}
-                  disabled={disabled}
-                />
+                  <option value="liftRange">연속 승강 범위에서 인계</option>
+                  <option value="fixedLevels">고정된 선반 높이에서 인계</option>
+                </select>
+              </label>
+              <div className="plan-two-fields">
+                {field("robot", "firstShelfHeight", "장비 첫 선반 높이", {
+                  nullable: true,
+                })}
+                {field("robot", "shelfPitch", "장비 선반 피치", {
+                  nullable: true,
+                })}
+                {field("robot", "shelfCount", "장비 내부 선반 수", {
+                  nullable: true,
+                  unit: "단",
+                  step: 1,
+                })}
+                {field("robot", "alignmentTolerance", "고정 인계 높이 오차", {
+                  step: 0.001,
+                })}
+                {field("robot", "maxPayloadKg", "최대 적재 중량", {
+                  nullable: true,
+                  unit: "kg",
+                  step: 10,
+                })}
               </div>
-            </section>
+              <button
+                className="button small"
+                disabled={disabled}
+                onClick={demoRobot}
+              >
+                DEMO 로봇 가정값 입력
+              </button>
+              <p className="plan-subtle">
+                예제를 넣어도 실제 로봇 사양 확인으로 표시하지 않습니다.
+              </p>
+            </details>
+            {confirmation("robot", "로봇 사양", canConfirmRobot)}
           </div>
-          <div className="plan-step-footer">
-            <p>수치를 수정하면 관련 확인 상태와 기존 배치 후보가 해제됩니다.</p>
-            <button className="button primary" onClick={() => setStep(2)}>
-              단수 · 인계 높이 비교 <span>→</span>
-            </button>
-          </div>
-        </>
+        </section>
       )}
-      {step === 2 && (
-        <>
-          <div className="plan-compare-targets">
+
+      {step === 3 && (
+        <section
+          className="plan-card plan-focused-card"
+          aria-label="랙 기본 입력"
+        >
+          <div className="plan-card-body">
+            <div className="plan-form-section">
+              <h3>검토할 랙</h3>
+              <p>단수와 제품 높이부터 정하면 높이 검토를 시작할 수 있습니다.</p>
+            </div>
+            <div className="plan-three-fields">
+              {levelsField("검토할 랙 단수")}
+              {field("rack", "loadHeight", "운송물 높이")}
+              {field("rack", "firstShelfHeight", "첫 선반 높이")}
+            </div>
+            <label className="plan-field">
+              <span>랙 높이 산정 방식</span>
+              <select
+                aria-label="랙 높이 산정 방식"
+                value={plan.rack.heightMode}
+                disabled={disabled}
+                onChange={(event) =>
+                  updatePlan((next) => {
+                    next.rack.heightMode = event.target
+                      .value as SpacePlan["rack"]["heightMode"];
+                    next.rack.confirmed = false;
+                  })
+                }
+              >
+                <option value="pitch">선반 피치 지정</option>
+                <option value="totalHeight">
+                  구조 총높이 지정 · 피치 역산
+                </option>
+                <option value="minimum">운송물에 맞는 최소 높이</option>
+              </select>
+            </label>
+            {plan.rack.heightMode === "pitch" &&
+              field("rack", "shelfPitch", "선반 간 피치", {
+                detail: "아래 선반면부터 다음 선반면까지의 높이 차이",
+              })}
+            {plan.rack.heightMode === "totalHeight" &&
+              field("rack", "totalHeight", "랙 구조 총높이", {
+                nullable: true,
+                detail: "바닥부터 상부 빔 상단까지의 높이",
+              })}
+            <p className="plan-assumption">
+              기본 선반·여유 수치는 예제 가정입니다. 상세 조건은 필요할 때 펼쳐
+              수정하세요.
+            </p>
+            <details className="plan-extra">
+              <summary>고급 설정 · 랙 크기·여유·하중</summary>
+              <div className="plan-two-fields">
+                {field("rack", "width", "랙 모듈 가로")}
+                {field("rack", "depth", "랙 모듈 깊이")}
+                {plan.rack.heightMode !== "pitch" &&
+                  field("rack", "shelfPitch", "지정 피치 (현재 모드 미사용)", {
+                    disabled: true,
+                  })}
+                {field("rack", "topClearance", "상부 여유 높이")}
+                {field("rack", "liftClearance", "인계 상승 여유")}
+                {field("rack", "beamThickness", "선반 빔 두께", { step: 0.01 })}
+                {field("rack", "unitLoadKg", "운송물 중량", {
+                  unit: "kg",
+                  step: 10,
+                })}
+                {field("rack", "shelfCapacityKg", "선반 허용 중량", {
+                  unit: "kg",
+                  step: 10,
+                })}
+              </div>
+            </details>
+            {confirmation("rack", "랙 사양", canConfirmRack)}
+          </div>
+        </section>
+      )}
+
+      {step === 4 && (
+        <div className="plan-step-body">
+          <section
+            className={`plan-review-summary ${activeComparison?.status ?? "needsReview"}`}
+          >
             <div>
-              <h2>비교할 랙 단수</h2>
+              <span className="plan-status">
+                {activeComparison
+                  ? statusText[activeComparison.status]
+                  : "추가 확인 필요"}
+              </span>
+              <h3>{plan.layout.requestedLevels}단 검토 결과</h3>
               <p>
-                1~100단의 정수를 입력하세요. 선반 피치·첫 선반과 건축·장비
-                사양을 함께 검사합니다.
+                {activeComparison?.status === "fail"
+                  ? "현재 조건에 맞지 않는 항목이 있습니다. 상세 사유를 확인하고 앞 단계에서 수정하세요."
+                  : activeComparison?.status === "pass"
+                    ? "입력한 치수와 확인 근거 기준을 충족합니다."
+                    : "비어 있거나 확인되지 않은 사양이 있습니다. 작성 중인 시나리오로 계속 보관할 수 있습니다."}
               </p>
             </div>
-            <NumberField
-              label="대안 A 단수"
-              unit="단"
-              value={candidateA}
-              step={1}
-              onChange={(v) =>
-                setCandidateA(Math.max(1, Math.min(100, Math.floor(v ?? 5))))
-              }
-            />
-            <NumberField
-              label="대안 B 단수"
-              unit="단"
-              value={candidateB}
-              step={1}
-              onChange={(v) =>
-                setCandidateB(Math.max(1, Math.min(100, Math.floor(v ?? 6))))
-              }
-            />
-          </div>
-          <div className="plan-vertical-capacity">
+            {levelsField("측면도 기준 단수")}
+          </section>
+          <div className="plan-review-metrics">
             <div>
-              <span>계산 기준 최대 단수</span>
+              <span>랙 구조 총높이</span>
               <strong>
-                {fmt(vertical.max, 0)}
-                <small>단</small>
+                {fmt(activeComparison?.totalHeight)} <small>m</small>
               </strong>
             </div>
             <div>
-              <span>공간 기준</span>
-              <b>{fmt(vertical.byHeight, 0)}단</b>
+              <span>필요 유효 천장</span>
+              <strong>
+                {fmt(activeComparison?.requiredClearHeight)} <small>m</small>
+              </strong>
             </div>
             <div>
-              <span>인계 기준</span>
-              <b>{fmt(vertical.byLift, 0)}단</b>
+              <span>필요 인계 높이</span>
+              <strong>
+                {fmt(activeComparison?.requiredLiftHeight)} <small>m</small>
+              </strong>
             </div>
             <div>
-              <span>지배 제약</span>
-              <b>
-                {
-                  {
-                    space: "건물 공간",
-                    robot: "로봇 인계",
-                    both: "공간·인계 동시",
-                    unknown: "추가 입력 필요",
-                  }[vertical.binding]
-                }
-              </b>
+              <span>높이 기준 최대 단수</span>
+              <strong>
+                {fmt(vertical.max, 0)} <small>단</small>
+              </strong>
             </div>
-            <p>
-              높이 조건만의 상한이며 하중·고정 인계단 매칭·근거 확인은 대안별로
-              별도 검사합니다. 다음 단 구조에 필요한 천장{" "}
-              {fmt(vertical.spaceHeightForNext)} m · 작업면{" "}
-              {fmt(vertical.workSurfaceMaxForNext)} m.
-            </p>
           </div>
-          <div className="plan-comparison-grid">
-            {comparisons.map((comparison) => (
-              <section
-                className={`plan-level-card ${comparison.status}`}
-                key={comparison.levels}
-              >
-                <header>
-                  <div>
-                    <span>RACK ALTERNATIVE</span>
-                    <h2>
-                      {comparison.levels}
-                      <small>단 구성</small>
-                    </h2>
-                  </div>
-                  <span className={`plan-status ${comparison.status}`}>
-                    {statusText[comparison.status]}
-                  </span>
-                </header>
-                <div className="plan-level-metrics">
-                  <div>
-                    <span>랙 구조 총높이</span>
-                    <strong>
-                      {fmt(comparison.totalHeight)}
-                      <small>m</small>
-                    </strong>
-                  </div>
-                  <div>
-                    <span>필요 유효 천장</span>
-                    <strong>
-                      {fmt(comparison.requiredClearHeight)}
-                      <small>m</small>
-                    </strong>
-                  </div>
-                  <div>
-                    <span>필요 인계 높이</span>
-                    <strong>
-                      {fmt(comparison.requiredLiftHeight)}
-                      <small>m</small>
-                    </strong>
-                  </div>
-                </div>
-                <div className="plan-formulas">
-                  <p>
-                    산정 피치 <b>{fmt(comparison.pitch)} m</b> · 최소 피치{" "}
-                    <b>{fmt(comparison.minPitch)} m</b> (운송물 + 인출 여유 +
-                    빔)
-                  </p>
-                  <p>
-                    최상단 선반 = {fmt(plan.rack.firstShelfHeight)} + (
-                    {comparison.levels} − 1) × {fmt(comparison.pitch)} ={" "}
-                    <b>{fmt(comparison.topShelfHeight)} m</b>
-                  </p>
-                  <p>
-                    랙 구조 총높이 = {fmt(plan.rack.firstShelfHeight)} +{" "}
-                    {comparison.levels} × {fmt(comparison.pitch)} ={" "}
-                    <b>{fmt(comparison.totalHeight)} m</b>
-                  </p>
-                  <p>
-                    필요 천장 = 구조 총높이 + 상부 여유{" "}
-                    {fmt(plan.rack.topClearance)} ={" "}
-                    <b>{fmt(comparison.requiredClearHeight)} m</b>
-                  </p>
-                  <p>
-                    필요 인계 = 최상단 선반 + 상승 여유{" "}
-                    {fmt(plan.rack.liftClearance)} ={" "}
-                    <b>{fmt(comparison.requiredLiftHeight)} m</b>
-                  </p>
-                  <p>
-                    단 내 운송물 위 여유{" "}
-                    <b>{fmt(comparison.clearanceAbove)} m</b> · 천장 잔여{" "}
-                    <b>{fmt(comparison.headroom)} m</b>
-                  </p>
-                </div>
-                <ul className="plan-check-list">
-                  {comparison.checks.map((check) => (
-                    <li key={check.code} className={check.status}>
-                      <i>
-                        {check.status === "pass"
-                          ? "✓"
-                          : check.status === "fail"
-                            ? "×"
-                            : "!"}
-                      </i>
-                      <div>
-                        <strong>{check.label}</strong>
-                        <p>{check.message}</p>
-                      </div>
-                      <span>
-                        {check.status === "pass"
-                          ? "충족"
-                          : check.status === "fail"
-                            ? "미충족"
-                            : "확인"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <footer>
-                  <button
-                    className={`button ${plan.layout.requestedLevels === comparison.levels ? "primary" : ""}`}
-                    disabled={disabled}
-                    onClick={() =>
-                      updatePlan((next) => {
-                        next.layout.requestedLevels = comparison.levels;
-                      })
-                    }
-                  >
-                    {plan.layout.requestedLevels === comparison.levels
-                      ? "선택됨"
-                      : `${comparison.levels}단 배치로 선택`}
-                  </button>
-                </footer>
-              </section>
-            ))}
-          </div>
-          <div className="plan-elevation-section">
-            <div className="plan-elevation-selection">
-              <div>
-                <h2>선택 대안의 인계 높이</h2>
-                <p>
-                  랙과 로봇을 같은 바닥 기준으로 비교합니다. 대안을 선택하거나
-                  단수를 직접 바꿀 수 있습니다.
-                </p>
-              </div>
+          <details className="plan-extra">
+            <summary>
+              검토 사유 자세히 보기
+              <span>
+                {activeComparison?.checks.filter(
+                  (check) => check.status !== "pass",
+                ).length ?? 0}
+                개 확인 항목
+              </span>
+            </summary>
+            {activeComparison && checkList(activeComparison)}
+          </details>
+          <UiElevation plan={plan} levels={plan.layout.requestedLevels} />
+          <details className="plan-extra plan-alternatives">
+            <summary>다른 단수와 비교</summary>
+            <div className="plan-two-fields">
               <NumberField
-                label="측면도 기준 단수"
+                label="대안 A 단수"
                 unit="단"
-                value={plan.layout.requestedLevels}
+                value={candidateA}
                 step={1}
-                disabled={disabled}
                 onChange={(value) =>
-                  updatePlan((next) => {
-                    next.layout.requestedLevels = Math.max(
-                      1,
-                      Math.min(100, Math.floor(value ?? 1)),
-                    );
-                  })
+                  setCandidateA(
+                    Math.max(1, Math.min(100, Math.floor(value ?? 5))),
+                  )
+                }
+              />
+              <NumberField
+                label="대안 B 단수"
+                unit="단"
+                value={candidateB}
+                step={1}
+                onChange={(value) =>
+                  setCandidateB(
+                    Math.max(1, Math.min(100, Math.floor(value ?? 6))),
+                  )
                 }
               />
             </div>
-            <UiElevation plan={plan} levels={plan.layout.requestedLevels} />
-          </div>
-          <div className="plan-comparison-note">
-            <strong>판정의 의미</strong>
-            <p>
-              ‘입력 기준 충족’은 기입한 수치와 사용자 확인 근거로 계산한 사전
-              검토 결과입니다. 구조 하중, 내진, 소방·피난, 방호와 실제 운행
-              검증은 별도 설계 검토가 필요합니다. 로봇 사양이나 천장 높이가
-              없으면 적합 판정을 만들지 않습니다.
+            <div className="plan-comparison-grid">
+              {comparisons.map((comparison) => (
+                <section
+                  className={`plan-level-card ${comparison.status}`}
+                  key={comparison.levels}
+                >
+                  <header>
+                    <h3>{comparison.levels}단</h3>
+                    <span className={`plan-status ${comparison.status}`}>
+                      {statusText[comparison.status]}
+                    </span>
+                  </header>
+                  <div className="plan-level-metrics">
+                    <div>
+                      <span>구조 총높이</span>
+                      <strong>{fmt(comparison.totalHeight)} m</strong>
+                    </div>
+                    <div>
+                      <span>필요 천장</span>
+                      <strong>{fmt(comparison.requiredClearHeight)} m</strong>
+                    </div>
+                    <div>
+                      <span>산정 피치</span>
+                      <strong>{fmt(comparison.pitch)} m</strong>
+                    </div>
+                  </div>
+                  <details className="plan-extra">
+                    <summary>검토 사유</summary>
+                    {checkList(comparison)}
+                    <p className="plan-subtle">
+                      최소 피치 {fmt(comparison.minPitch)} m · 운송물 위 여유{" "}
+                      {fmt(comparison.clearanceAbove)} m · 천장 잔여{" "}
+                      {fmt(comparison.headroom)} m
+                    </p>
+                  </details>
+                  <footer>
+                    <button
+                      className="button small"
+                      disabled={disabled}
+                      onClick={() =>
+                        updatePlan((next) => {
+                          next.layout.requestedLevels = comparison.levels;
+                        })
+                      }
+                    >
+                      {comparison.levels}단 배치로 선택
+                    </button>
+                  </footer>
+                </section>
+              ))}
+            </div>
+            <p className="plan-subtle">
+              최대 단수는 높이 기준 상한입니다. 다음 단에 필요한 천장{" "}
+              {fmt(vertical.spaceHeightForNext)} m · 작업면{" "}
+              {fmt(vertical.workSurfaceMaxForNext)} m. 구조·소방·현장 인계
+              조건은 별도 확인이 필요합니다.
             </p>
-          </div>
-          <div className="plan-step-footer">
-            <p>
-              선택 구성: <b>{plan.layout.requestedLevels}단</b> ·{" "}
-              {activeComparison
-                ? statusText[activeComparison.status]
-                : "확인 필요"}
-            </p>
-            <button className="button primary" onClick={() => setStep(3)}>
-              배치 후보 · 3D 확인 <span>→</span>
-            </button>
-          </div>
-        </>
+          </details>
+        </div>
       )}
-      {step === 3 && (
-        <>
+
+      {step === 5 && (
+        <div className="plan-step-body">
           <div className="plan-layout-grid">
             <aside className="plan-card plan-layout-controls">
-              <header>
-                <span className="plan-card-number">D</span>
-                <div>
-                  <h2>배치 후보 생성</h2>
-                  <p>규칙 기반 방향·열 배치 비교</p>
-                </div>
-              </header>
               <div className="plan-card-body">
-                <NumberField
-                  label="선택 랙 단수 (1~100)"
-                  unit="단"
-                  value={plan.layout.requestedLevels}
-                  step={1}
-                  disabled={disabled}
-                  onChange={(value) =>
-                    updatePlan((next) => {
-                      next.layout.requestedLevels = Math.max(
-                        1,
-                        Math.min(100, Math.floor(value ?? 1)),
-                      );
-                    })
-                  }
-                />
-                <NumberField
-                  label="외곽 여유 거리"
-                  value={plan.layout.margin}
-                  onChange={(value) =>
-                    updatePlan((next) => {
-                      next.layout.margin = value ?? 0;
-                    })
-                  }
-                  disabled={disabled}
-                />
-                <NumberField
-                  label="횡단 통로 폭"
-                  value={plan.layout.crossAisle}
-                  onChange={(value) =>
-                    updatePlan((next) => {
-                      next.layout.crossAisle = value ?? 0;
-                    })
-                  }
-                  disabled={disabled}
-                />
-                <div className="plan-layout-reference">
-                  <span>장비 작업 통로</span>
-                  <strong>{fmt(plan.robot.minAisleWidth)} m</strong>
-                  <small>장비 사양 탭에서 실제 요구 폭을 입력하세요.</small>
-                </div>
+                <h3>배치 후보</h3>
+                <p className="plan-subtle">
+                  실제 로봇 외형과 통로 조건이 있을 때 생성합니다. 아직 사양이
+                  없으면 이 단계는 건너뛰세요.
+                </p>
                 <div
                   className={`plan-inline-check ${activeComparison?.status ?? "needsReview"}`}
                 >
@@ -1145,6 +914,33 @@ export default function UiPlanning({
                       : "추가 확인 필요"}
                   </span>
                 </div>
+                <div className="plan-layout-reference">
+                  <span>최소 작업 통로</span>
+                  <strong>{fmt(plan.robot.minAisleWidth)} m</strong>
+                </div>
+                <details className="plan-extra">
+                  <summary>배치 여유 조정</summary>
+                  <NumberField
+                    label="외곽 여유 거리"
+                    value={plan.layout.margin}
+                    onChange={(value) =>
+                      updatePlan((next) => {
+                        next.layout.margin = value ?? 0;
+                      })
+                    }
+                    disabled={disabled}
+                  />
+                  <NumberField
+                    label="횡단 통로 폭"
+                    value={plan.layout.crossAisle}
+                    onChange={(value) =>
+                      updatePlan((next) => {
+                        next.layout.crossAisle = value ?? 0;
+                      })
+                    }
+                    disabled={disabled}
+                  />
+                </details>
                 <button
                   className="button primary full"
                   onClick={generate}
@@ -1152,20 +948,15 @@ export default function UiPlanning({
                 >
                   배치 후보 생성
                 </button>
-                <p className="plan-demo-note">
-                  기존 2D 객체의 외곽을 제외 영역으로 사용합니다. 벽·기둥·설비는
-                  먼저 2D 화면에 배치하세요. 전체 최적해를 보장하지 않는
-                  휴리스틱 후보입니다.
-                </p>
                 <div className="plan-layout-stat">
-                  <span>저장된 랙 후보</span>
+                  <span>랙 후보</span>
                   <strong>
                     {placements.length}
                     <small>개</small>
                   </strong>
                 </div>
                 <div className="plan-layout-stat">
-                  <span>선택 {plan.layout.requestedLevels}단 기하 용량</span>
+                  <span>{plan.layout.requestedLevels}단 기하 용량</span>
                   <strong>
                     {fmt(
                       proposal?.capacityUnits ??
@@ -1175,34 +966,6 @@ export default function UiPlanning({
                     <small>위치</small>
                   </strong>
                 </div>
-                <div className="plan-capacity-grid">
-                  <div>
-                    <span>5단 기하 용량</span>
-                    <b>
-                      {fmt(proposal?.capacity5 ?? placements.length * 5, 0)}
-                    </b>
-                  </div>
-                  <div>
-                    <span>6단 기하 용량</span>
-                    <b>
-                      {fmt(proposal?.capacity6 ?? placements.length * 6, 0)}
-                    </b>
-                  </div>
-                </div>
-                <div className="plan-max-levels">
-                  <span>
-                    입력 천장 기준 최대{" "}
-                    <b>{fmt(proposal?.maxLevelsByHeight, 0)}단</b>
-                  </span>
-                  <span>
-                    입력 인계 높이 기준 최대{" "}
-                    <b>{fmt(proposal?.maxLevelsByLift, 0)}단</b>
-                  </span>
-                </div>
-                <p className="plan-demo-note">
-                  선반 1개당 운송물 1개 가정의 위치 수입니다. 높이·하중 미충족
-                  대안은 운영 가능한 용량으로 해석하지 마세요.
-                </p>
                 <button
                   className="button full"
                   disabled={
@@ -1214,17 +977,20 @@ export default function UiPlanning({
                 >
                   후보를 2D 객체로 적용
                 </button>
-                <p className="plan-demo-note">
-                  이 버튼은 계획 랙 객체만 교체합니다. DES 노드·경로·버퍼·운송
-                  작업은 자동 생성하지 않습니다.
+                <p className="plan-subtle">
+                  높이·하중 불합격 후보는 적용할 수 없습니다. 위치 수는 선반당
+                  운송물 1개 가정입니다.
                 </p>
               </div>
             </aside>
             <section className="plan-scene-card">
               <div className="plan-scene-heading">
                 <div>
-                  <span>SPATIAL REVIEW</span>
-                  <h2>3D 배치 · 높이 검토</h2>
+                  <h3>3D 배치 · 높이 검토</h3>
+                  <p>
+                    {fmt(plan.building.width)} × {fmt(plan.building.depth)} m ·{" "}
+                    {plan.layout.requestedLevels}단
+                  </p>
                 </div>
                 <span
                   className={`plan-status ${proposal?.status === "verified" ? "pass" : "needsReview"}`}
@@ -1235,28 +1001,16 @@ export default function UiPlanning({
                 </span>
               </div>
               <UiScene3D project={project} plan={plan} />
-              <div className="plan-scene-caption">
-                <span>
-                  {fmt(plan.building.width)} × {fmt(plan.building.depth)} m ·
-                  천장 {fmt(plan.building.clearHeight)} m
-                </span>
-                <span>
-                  {plan.layout.requestedLevels}단 · 랙 {placements.length}개
-                </span>
-              </div>
             </section>
           </div>
           {proposal && (
-            <section className="plan-proposal-report">
-              <div>
-                <h3>후보 생성 근거</h3>
-                <span className="tiny-pill">
-                  {proposal.candidateCount} CANDIDATES
-                </span>
-                <span className="tiny-pill">
-                  방향 {String(proposal.orientation)}°
-                </span>
-              </div>
+            <details
+              className="plan-extra plan-proposal-report"
+              open={proposal.issues.length > 0}
+            >
+              <summary>
+                후보 생성 근거<span>{proposal.candidateCount}개 조건 비교</span>
+              </summary>
               {proposal.issues.length > 0 && (
                 <ul>
                   {proposal.issues.map((issue, index) => (
@@ -1264,11 +1018,97 @@ export default function UiPlanning({
                   ))}
                 </ul>
               )}
-              <p>{proposal.assumptions.join(" · ")}</p>
-            </section>
+              <p className="plan-subtle">{proposal.assumptions.join(" · ")}</p>
+            </details>
           )}
-        </>
+          <p className="plan-subtle">
+            2D 배치 적용은 랙 위치를 반영합니다. 운송 경로와 재고·공정 조건은
+            운영 모델에서 별도로 구성합니다.
+          </p>
+        </div>
       )}
+
+      <details className="plan-extra plan-example-tools">
+        <summary>예제 · 파일 불러오기</summary>
+        <p className="plan-subtle">
+          처음에는 현재 기본값으로 진행해도 됩니다. 아래 수직 예제는 실제 현장
+          사양이 아닙니다.
+        </p>
+        <div className="plan-tool-buttons">
+          <button
+            className="button small"
+            disabled={disabled}
+            onClick={() =>
+              applyVertical(
+                structuredClone(EXAMPLE_INPUT),
+                "첨부 예제 가정 · 실사양 아님",
+              )
+            }
+          >
+            첨부 2,699 mm 예제 적용
+          </button>
+          <button
+            className="button small"
+            disabled={disabled}
+            onClick={() => verticalFileRef.current?.click()}
+          >
+            버티컬 사양 JSON 불러오기
+          </button>
+        </div>
+        <input
+          hidden
+          type="file"
+          accept="application/json,.json"
+          aria-label="버티컬 사양 JSON 파일"
+          ref={verticalFileRef}
+          onChange={importVertical}
+        />
+      </details>
+      <footer className="plan-wizard-footer">
+        <button
+          className="button"
+          onClick={() => setStep(Math.max(0, step - 1) as PlanStep)}
+          disabled={step === 0}
+        >
+          ← 이전
+        </button>
+        <div className="plan-footer-note">
+          <strong>
+            {step + 1} / {steps.length}
+          </strong>
+          <span>이전 단계로 돌아가 언제든 수정할 수 있습니다.</span>
+        </div>
+        <div className="plan-footer-actions">
+          {step === 0 && (
+            <button className="text-button" onClick={() => setStep(1)}>
+              도면은 나중에
+            </button>
+          )}
+          {step === 2 && (
+            <button className="text-button" onClick={() => setStep(3)}>
+              사양은 나중에
+            </button>
+          )}
+          {step < 5 ? (
+            <button
+              className="button primary"
+              onClick={() => setStep((step + 1) as PlanStep)}
+            >
+              다음: {steps[step + 1].label} →
+            </button>
+          ) : (
+            onComplete && (
+              <button
+                className="button primary"
+                onClick={onComplete}
+                disabled={disabled}
+              >
+                시뮬레이션 실행 →
+              </button>
+            )
+          )}
+        </div>
+      </footer>
       {message && (
         <div className="plan-message" role="status">
           {message}

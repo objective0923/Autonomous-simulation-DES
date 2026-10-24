@@ -43,6 +43,11 @@ export function validateProject(input: unknown): ValidationIssue[] {
       },
     ];
   const p = input;
+  if (
+    p.customerName !== undefined &&
+    (!nonempty(p.customerName) || p.customerName.trim().length > 120)
+  )
+    add("CUSTOMER_NAME", "고객 이름은 1~120자로 입력하세요.");
   if (p.spacePlan !== undefined) issues.push(...validateSpacePlan(p.spacePlan));
   if (p.schemaVersion !== "1.0")
     add("SCHEMA_VERSION", '지원하는 schemaVersion은 "1.0"입니다.');

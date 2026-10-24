@@ -203,6 +203,7 @@ export interface SpacePlan {
   };
 }
 export interface Project {
+  customerName?: string;
   schemaVersion: "1.0";
   id: string;
   name: string;
