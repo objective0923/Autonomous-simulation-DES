@@ -18,12 +18,14 @@ npm run dev
 
 ```sh
 npm run build
-.venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000
+npm run start
 ```
 
 개별 개발 실행은 `npm run dev:web`, `npm run dev:api`입니다. API 상태 경로는 `/api/health`입니다. `npm run preview`에서 DES를 계산하려면 API도 실행되어 있어야 합니다. 인터넷 공개 배포와 인증·운영 구성은 별도입니다.
 
 ## 웹 사용 흐름
+
+Windows 첫 설치는 [Windows 설치·테스트](docs/windows-setup.md)를 참고하세요. `npm run start`는 빌드한 웹과 API를 로컬 8000 포트로 제공합니다.
 
 1. **공간 · 랙 사전 설계**에서 고객 PNG/JPG/PDF를 엽니다. PDF 페이지를 선택하고 두 기준점과 실제 거리(m)로 축척을 보정합니다. 원본 페이지·기준점·확인 근거를 저장합니다.
 2. 건물 유효 폭·깊이·최저 천장, 로봇 외형·최저/최고 인계 높이·최대 상승 전고·내부 선반 피치, 랙·적재물을 입력합니다. 미제공 실제 로봇 사양은 비워 둡니다.
